@@ -1,6 +1,10 @@
 
 #include <Arduino.h>
 #include <DHT.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <time.h>
 
 // =====================================================
 // CHRIST SMART CAMPUS - CAMPUS SAFETY MODULE
@@ -44,6 +48,22 @@ const float EMERGENCY_TEMP_C = 50.0;
 const unsigned long SENSOR_INTERVAL = 2000;
 const unsigned long TELEMETRY_INTERVAL = 5000;
 const unsigned long BUTTON_DEBOUNCE = 250;
+const unsigned long MQTT_RECONNECT_INTERVAL = 5000;
+const unsigned long STATUS_INTERVAL = 30000;
+
+// Prototype Wi-Fi and MQTT configuration
+const char* WIFI_SSID = "Wokwi-GUEST";
+const char* WIFI_PASSWORD = "";
+const char* MQTT_BROKER = "broker.emqx.io";
+const int MQTT_PORT = 8883;
+const char* TELEMETRY_TOPIC = "christ-smart-campus/v1/safety/BLOCK-A/SAFETY-A-ESP32-01/telemetry";
+const char* STATUS_TOPIC = "christ-smart-campus/v1/safety/BLOCK-A/SAFETY-A-ESP32-01/status";
+const char* ALERT_TOPIC = "christ-smart-campus/v1/safety/BLOCK-A/SAFETY-A-ESP32-01/alerts";
+
+WiFiClientSecure secureClient;
+PubSubClient mqttClient(secureClient);
+unsigned long lastMQTTReconnect = 0;
+unsigned long lastStatusPublish = 0;
 
 // =====================================================
 // SENSOR
@@ -79,6 +99,65 @@ bool temperatureEmergencyLatched = false;
 bool buzzerIsOn = false;
 
 // =====================================================
+// WIFI, MQTT AND TIMESTAMP HELPERS
+// =====================================================
+String getTimestamp() {
+  struct tm timeInfo;
+  if (!getLocalTime(&timeInfo, 1000)) return "";
+  char buffer[25];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeInfo);
+  return String(buffer);
+}
+
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi connected!");
+}
+
+bool connectMQTT() {
+  if (mqttClient.connected()) return true;
+  String clientId = String(DEVICE_ID) + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+  Serial.print("Connecting to MQTT...");
+  if (mqttClient.connect(clientId.c_str())) {
+    Serial.println(" MQTT TLS CONNECTION SUCCESSFUL!");
+    return true;
+  }
+  Serial.print(" MQTT connection failed, state=");
+  Serial.println(mqttClient.state());
+  return false;
+}
+
+void maintainMQTTConnection() {
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.reconnect();
+    return;
+  }
+  if (!mqttClient.connected() && millis() - lastMQTTReconnect >= MQTT_RECONNECT_INTERVAL) {
+    lastMQTTReconnect = millis();
+    connectMQTT();
+  }
+  mqttClient.loop();
+}
+
+void publishDeviceStatus() {
+  if (!mqttClient.connected()) return;
+  String payload = "{";
+  payload += "\"message_type\":\"status\",\"schema_version\":\"1.0\",";
+  payload += "\"campus_id\":\"" + String(CAMPUS_ID) + "\",\"module\":\"safety\",";
+  payload += "\"building_id\":\"" + String(BUILDING_ID) + "\",\"zone_id\":\"" + String(ZONE_ID) + "\",";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",\"timestamp\":\"" + getTimestamp() + "\",";
+  payload += "\"online\":true,\"emergency_active\":" + String(emergencyActive ? "true" : "false") + "}";
+  if (mqttClient.publish(STATUS_TOPIC, payload.c_str())) Serial.println("Safety device online status published.");
+  else Serial.println("Safety device status MQTT publish failed.");
+}
+
+// =====================================================
 // AGGREGATED DASHBOARD TELEMETRY
 // =====================================================
 void publishTelemetry() {
@@ -90,7 +169,7 @@ void publishTelemetry() {
   payload += "\"module\":\"" + String(MODULE) + "\",\"building_id\":\"" + String(BUILDING_ID) + "\",";
   payload += "\"zone_id\":\"" + String(ZONE_ID) + "\",";
   payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
-  payload += "\"timestamp\":null,\"timestamp_ms\":" + String(millis()) + ",\"metrics\":{";
+  payload += "\"timestamp\":\"" + getTimestamp() + "\",\"timestamp_ms\":" + String(millis()) + ",\"metrics\":{";
   payload += "\"temperature\":{\"value\":";
   payload += temperatureValid ? String(temperatureC, 2) : "null";
   payload += ",\"unit\":\"C\",\"status\":\"";
@@ -111,6 +190,12 @@ void publishTelemetry() {
   payload += "\"active_severity\":{\"value\":\"" + activeSeverity + "\",\"unit\":\"state\",\"status\":\"normal\"}";
   payload += "}}";
   Serial.println(payload);
+  if (mqttClient.connected()) {
+    if (mqttClient.publish(TELEMETRY_TOPIC, payload.c_str())) Serial.println("Safety telemetry published to MQTT.");
+    else Serial.println("Safety telemetry MQTT publish failed.");
+  } else {
+    Serial.println("MQTT disconnected; safety telemetry not published.");
+  }
 }
 
 // =====================================================
@@ -123,69 +208,24 @@ void publishAlert(
   const char* event
 ) {
   eventCounter++;
-
-  Serial.print("{");
-
-  Serial.print("\"message_type\":\"alert\",");
-  Serial.print("\"schema_version\":\"1.0\",");
-  Serial.print("\"campus_id\":\"");
-  Serial.print(CAMPUS_ID);
-  Serial.print("\",");
-
-  Serial.print("\"module\":\"");
-  Serial.print(MODULE);
-  Serial.print("\",");
-
-  Serial.print("\"building_id\":\"");
-  Serial.print(BUILDING_ID);
-  Serial.print("\",");
-
-  Serial.print("\"zone_id\":\"");
-  Serial.print(ZONE_ID);
-  Serial.print("\",");
-
-  Serial.print("\"device_id\":\"");
-  Serial.print(DEVICE_ID);
-  Serial.print("\",");
-
-  Serial.print("\"timestamp\":null,");
-  Serial.print("\"timestamp_ms\":");
-  Serial.print(millis());
-  Serial.print(",");
-
-  Serial.print("\"alert_type\":\"");
-  Serial.print(alertType);
-  Serial.print("\",");
-
-  Serial.print("\"severity\":\"");
-  Serial.print(severity);
-  Serial.print("\",");
-
-  Serial.print("\"event\":\"");
-  Serial.print(event);
-  Serial.print("\",");
-
-  Serial.print("\"event_id\":\"");
-  Serial.print(DEVICE_ID);
-  Serial.print("-");
-  Serial.print(eventCounter);
-  Serial.print("\",");
-
-  Serial.print("\"temperature_c\":");
-  if (temperatureValid) {
-    Serial.print(temperatureC, 2);
+  String payload = "{";
+  payload += "\"message_type\":\"alert\",\"schema_version\":\"1.0\",";
+  payload += "\"campus_id\":\"" + String(CAMPUS_ID) + "\",\"module\":\"safety\",";
+  payload += "\"building_id\":\"" + String(BUILDING_ID) + "\",\"zone_id\":\"" + String(ZONE_ID) + "\",";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",\"timestamp\":\"" + getTimestamp() + "\",";
+  payload += "\"timestamp_ms\":" + String(millis()) + ",";
+  payload += "\"alert_type\":\"" + String(alertType) + "\",\"severity\":\"" + String(severity) + "\",";
+  payload += "\"event\":\"" + String(event) + "\",\"event_id\":\"" + String(DEVICE_ID) + "-" + String(eventCounter) + "\",";
+  payload += "\"temperature_c\":";
+  payload += temperatureValid ? String(temperatureC, 2) : "null";
+  payload += ",\"alert_status\":\"" + String(emergencyActive ? "active" : "resolved") + "\"}";
+  Serial.println(payload);
+  if (mqttClient.connected()) {
+    if (mqttClient.publish(ALERT_TOPIC, payload.c_str())) Serial.println("Safety alert event published to MQTT.");
+    else Serial.println("Safety alert MQTT publish failed.");
   } else {
-    Serial.print("null");
+    Serial.println("MQTT disconnected; safety alert was not published.");
   }
-
-  Serial.print(",");
-
-  Serial.print("\"alert_status\":\"");
-  Serial.print(emergencyActive ? "active" : "resolved");
-  Serial.print("\"");
-
-  Serial.println("}");
-
 }
 
 // =====================================================
@@ -447,6 +487,19 @@ void setup() {
 
   Serial.begin(115200);
 
+  connectWiFi();
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.println("Synchronising system time...");
+  struct tm timeInfo;
+  if (getLocalTime(&timeInfo, 10000)) Serial.println("Time synchronized successfully.");
+  else Serial.println("NTP time not available yet; timestamps may be empty.");
+  secureClient.setInsecure(); // Prototype only: use a trusted CA certificate in production.
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setKeepAlive(30);
+  mqttClient.setSocketTimeout(5);
+  mqttClient.setBufferSize(2048);
+  connectMQTT();
+
   pinMode(EMERGENCY_BUTTON, INPUT_PULLUP);
   pinMode(RESET_BUTTON, INPUT_PULLUP);
 
@@ -469,6 +522,7 @@ void setup() {
 
   lastSensorRead = millis();
   lastTelemetry = millis();
+  lastStatusPublish = millis();
 
   Serial.println("Safety monitoring system ready.");
 }
@@ -479,6 +533,7 @@ void setup() {
 
 void loop() {
 
+  maintainMQTTConnection();
   unsigned long currentTime = millis();
 
   processButtons();
@@ -502,4 +557,9 @@ void loop() {
   }
 
   updateIndicators();
+
+  if (currentTime - lastStatusPublish >= STATUS_INTERVAL) {
+    lastStatusPublish = currentTime;
+    publishDeviceStatus();
+  }
 }

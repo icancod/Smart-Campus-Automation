@@ -1,6 +1,10 @@
 
 #include <Arduino.h>
 #include "HX711.h"
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <time.h>
 
 // =====================================================
 // CHRIST SMART CAMPUS - SMART WASTE MANAGEMENT
@@ -12,6 +16,27 @@ const char* MODULE     = "waste";
 const char* BUILDING_ID = "BLOCK-A";
 const char* ZONE_ID     = "CANTEEN";
 const char* DEVICE_ID   = "WASTE-A-ESP32-01";
+
+// =====================================================
+// WIFI / MQTT CONFIGURATION
+// =====================================================
+WiFiClientSecure secureClient;
+PubSubClient mqttClient(secureClient);
+
+const char* WIFI_SSID = "Wokwi-GUEST";
+const char* WIFI_PASSWORD = "";
+const char* MQTT_BROKER = "broker.emqx.io";
+const int MQTT_PORT = 8883;
+
+const char* TELEMETRY_TOPIC =
+  "christ-smart-campus/v1/waste/BLOCK-A/WASTE-A-ESP32-01/telemetry";
+const char* STATUS_TOPIC =
+  "christ-smart-campus/v1/waste/BLOCK-A/WASTE-A-ESP32-01/status";
+
+const unsigned long MQTT_RECONNECT_INTERVAL = 5000;
+const unsigned long STATUS_INTERVAL = 30000;
+unsigned long lastMQTTAttempt = 0;
+unsigned long lastStatusPublish = 0;
 
 // =====================================================
 // GPIO CONFIGURATION
@@ -94,6 +119,77 @@ enum BinStatus {
 };
 
 BinStatus currentStatus = SENSOR_ERROR;
+
+// =====================================================
+// WIFI, TIME AND MQTT CONNECTION MANAGEMENT
+// =====================================================
+void connectWiFi() {
+  Serial.println();
+  Serial.print("Connecting to Wi-Fi");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.println("Wi-Fi connected!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void syncTime() {
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.println("Synchronizing UTC time...");
+  time_t now = time(nullptr);
+  int attempts = 0;
+  while (now < 1700000000 && attempts < 20) {
+    delay(500);
+    now = time(nullptr);
+    attempts++;
+  }
+  Serial.println(now >= 1700000000 ? "Time synchronized successfully." : "WARNING: Time synchronization failed.");
+}
+
+String getTimestamp() {
+  time_t now = time(nullptr);
+  if (now < 1700000000) return "";
+  struct tm timeinfo;
+  gmtime_r(&now, &timeinfo);
+  char timestamp[25];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+  return String(timestamp);
+}
+
+bool connectMQTT() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  if (mqttClient.connected()) return true;
+  Serial.println();
+  Serial.println("--- MQTT TLS CONNECTION ---");
+  Serial.println("Connecting to broker.emqx.io:8883...");
+  String clientId = String(DEVICE_ID) + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+  if (mqttClient.connect(clientId.c_str())) {
+    Serial.println("MQTT TLS CONNECTION SUCCESSFUL!");
+    Serial.print("Client ID: "); Serial.println(clientId);
+    lastStatusPublish = 0;
+    return true;
+  }
+  Serial.print("MQTT connection failed. State: ");
+  Serial.println(mqttClient.state());
+  return false;
+}
+
+void maintainMQTTConnection() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+    return;
+  }
+  if (millis() - lastMQTTAttempt >= MQTT_RECONNECT_INTERVAL) {
+    lastMQTTAttempt = millis();
+    connectMQTT();
+  }
+}
 
 // =====================================================
 // ULTRASONIC SENSOR
@@ -362,7 +458,7 @@ void printSystemStatus() {
 // =====================================================
 // DASHBOARD TELEMETRY - ONE AGGREGATED JSON RECORD
 // =====================================================
-void publishTelemetryToSerial() {
+void publishWasteTelemetry() {
   String payload;
   payload.reserve(1200);
   payload = "{";
@@ -371,7 +467,10 @@ void publishTelemetryToSerial() {
   payload += "\"module\":\"" + String(MODULE) + "\",\"building_id\":\"" + String(BUILDING_ID) + "\",";
   payload += "\"zone_id\":\"" + String(ZONE_ID) + "\",";
   payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
-  payload += "\"timestamp\":null,\"timestamp_ms\":" + String(millis()) + ",\"metrics\":{";
+  String timestamp = getTimestamp();
+  payload += "\"timestamp\":";
+  payload += timestamp.length() ? "\"" + timestamp + "\"" : "null";
+  payload += ",\"timestamp_ms\":" + String(millis()) + ",\"metrics\":{";
 
   payload += "\"fill_percentage\":{\"value\":";
   payload += fillLevelValid ? String(fillPercentage, 2) : "null";
@@ -414,6 +513,35 @@ void publishTelemetryToSerial() {
   payload += ",\"unit\":\"boolean\",\"status\":\"normal\"}";
   payload += "}}";
   Serial.println(payload);
+
+  if (mqttClient.connected()) {
+    if (mqttClient.publish(TELEMETRY_TOPIC, payload.c_str())) {
+      Serial.println("Waste telemetry published to MQTT.");
+    } else {
+      Serial.println("Waste telemetry MQTT publish failed.");
+    }
+  } else {
+    Serial.println("MQTT disconnected. Waste telemetry not published.");
+  }
+}
+
+void publishDeviceStatus() {
+  if (!mqttClient.connected()) return;
+  String timestamp = getTimestamp();
+  String payload = "{";
+  payload += "\"message_type\":\"device_status\",\"schema_version\":\"1.0\",";
+  payload += "\"campus_id\":\"" + String(CAMPUS_ID) + "\",";
+  payload += "\"module\":\"waste\",\"building_id\":\"" + String(BUILDING_ID) + "\",";
+  payload += "\"zone_id\":\"" + String(ZONE_ID) + "\",";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
+  payload += "\"timestamp\":";
+  payload += timestamp.length() ? "\"" + timestamp + "\"" : "null";
+  payload += ",\"timestamp_ms\":" + String(millis()) + ",\"status\":\"online\"}";
+  if (mqttClient.publish(STATUS_TOPIC, payload.c_str())) {
+    Serial.println("Waste device online status published.");
+  } else {
+    Serial.println("Waste device status MQTT publish failed.");
+  }
 }
 
 // =====================================================
@@ -468,6 +596,18 @@ void setup() {
   lastTelemetry = millis();
 
   Serial.println("Waste monitoring system ready.");
+
+  connectWiFi();
+  syncTime();
+
+  // Prototype only: certificate verification is disabled.
+  // Configure a trusted CA certificate before production use.
+  secureClient.setInsecure();
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setKeepAlive(30);
+  mqttClient.setSocketTimeout(5);
+  mqttClient.setBufferSize(2048);
+  connectMQTT();
 }
 
 // =====================================================
@@ -477,6 +617,8 @@ void setup() {
 void loop() {
 
   unsigned long currentTime = millis();
+
+  maintainMQTTConnection();
 
   if (currentTime - lastSensorRead >= SENSOR_INTERVAL) {
 
@@ -497,6 +639,12 @@ void loop() {
 
     lastTelemetry = currentTime;
 
-    publishTelemetryToSerial();
+    publishWasteTelemetry();
+  }
+
+  if (mqttClient.connected() &&
+      currentTime - lastStatusPublish >= STATUS_INTERVAL) {
+    lastStatusPublish = currentTime;
+    publishDeviceStatus();
   }
 }

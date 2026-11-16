@@ -1,10 +1,36 @@
 
 #include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <time.h>
 
 // ============================================================
 // CHRIST SMART CAMPUS - SMART ENERGY MODULE
 // SIMULATED ENERGY MONITORING SYSTEM
 // ============================================================
+
+// ---------------- WI-FI AND MQTT CONFIGURATION ----------------
+
+WiFiClientSecure secureClient;
+PubSubClient mqttClient(secureClient);
+
+const char* WIFI_SSID = "Wokwi-GUEST";
+const char* WIFI_PASSWORD = "";
+
+const char* MQTT_BROKER = "broker.emqx.io";
+const int MQTT_PORT = 8883;
+
+const char* TELEMETRY_TOPIC =
+    "christ-smart-campus/v1/energy/BLOCK-A/ENERGY-A-ESP32-01/telemetry";
+const char* STATUS_TOPIC =
+    "christ-smart-campus/v1/energy/BLOCK-A/ENERGY-A-ESP32-01/status";
+
+const unsigned long MQTT_RECONNECT_INTERVAL = 5000;
+const unsigned long STATUS_INTERVAL = 30000;
+
+unsigned long lastMQTTAttempt = 0;
+unsigned long lastStatusPublish = 0;
 
 // ---------------- DEVICE INFORMATION ----------------
 
@@ -296,6 +322,118 @@ const char* getLoadStatusCode(LoadStatus status) {
 // DASHBOARD TELEMETRY - ONE AGGREGATED JSON RECORD
 // All electrical readings in this module are simulated.
 // ============================================================
+String getTimestamp() {
+    time_t now = time(nullptr);
+    if (now < 1700000000) return "";
+
+    struct tm timeinfo;
+    gmtime_r(&now, &timeinfo);
+
+    char timestamp[25];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+    return String(timestamp);
+}
+
+void connectWiFi() {
+    Serial.println();
+    Serial.print("Connecting to Wi-Fi");
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println();
+    Serial.println("Wi-Fi connected!");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+}
+
+void syncTime() {
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    Serial.println("Synchronizing UTC time...");
+
+    time_t now = time(nullptr);
+    int attempts = 0;
+    while (now < 1700000000 && attempts < 20) {
+        delay(500);
+        now = time(nullptr);
+        attempts++;
+    }
+
+    if (now >= 1700000000) Serial.println("Time synchronized successfully.");
+    else Serial.println("WARNING: Time synchronization failed.");
+}
+
+bool connectMQTT() {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Wi-Fi is disconnected. MQTT connection skipped.");
+        return false;
+    }
+
+    if (mqttClient.connected()) return true;
+
+    Serial.println();
+    Serial.println("--- MQTT TLS CONNECTION ---");
+    Serial.println("Connecting to broker.emqx.io:8883...");
+
+    String clientId = String(DEVICE_ID) + "-" +
+                      String((uint32_t)ESP.getEfuseMac(), HEX);
+
+    if (mqttClient.connect(clientId.c_str())) {
+        Serial.println("MQTT TLS CONNECTION SUCCESSFUL!");
+        Serial.print("Client ID: ");
+        Serial.println(clientId);
+        lastStatusPublish = 0;
+        return true;
+    }
+
+    Serial.print("MQTT connection failed. State: ");
+    Serial.println(mqttClient.state());
+    return false;
+}
+
+void maintainMQTTConnection() {
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    if (mqttClient.connected()) {
+        mqttClient.loop();
+        return;
+    }
+
+    if (millis() - lastMQTTAttempt >= MQTT_RECONNECT_INTERVAL) {
+        lastMQTTAttempt = millis();
+        connectMQTT();
+    }
+}
+
+void publishDeviceStatus() {
+    if (!mqttClient.connected()) return;
+
+    String timestamp = getTimestamp();
+    String payload = "{";
+    payload += "\"message_type\":\"device_status\",";
+    payload += "\"schema_version\":\"1.0\",";
+    payload += "\"campus_id\":\"" + String(CAMPUS_ID) + "\",";
+    payload += "\"module\":\"energy\",";
+    payload += "\"building_id\":\"" + String(BUILDING_ID) + "\",";
+    payload += "\"zone_id\":\"" + String(ZONE_ID) + "\",";
+    payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
+    payload += "\"timestamp\":";
+    payload += timestamp.length() ? "\"" + timestamp + "\"" : "null";
+    payload += ",\"timestamp_ms\":" + String(millis()) + ",";
+    payload += "\"status\":\"online\"}";
+
+    if (mqttClient.publish(STATUS_TOPIC, payload.c_str())) {
+        Serial.println("Energy device online status published.");
+    } else {
+        Serial.println("Energy device status publish failed.");
+    }
+}
+
 void publishEnergyTelemetry() {
     String payload;
     payload.reserve(1000);
@@ -305,7 +443,10 @@ void publishEnergyTelemetry() {
     payload += "\"module\":\"energy\",\"building_id\":\"" + String(BUILDING_ID) + "\",";
     payload += "\"zone_id\":\"" + String(ZONE_ID) + "\",";
     payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
-    payload += "\"timestamp\":null,\"timestamp_ms\":" + String(millis()) + ",";
+    String timestamp = getTimestamp();
+    payload += "\"timestamp\":";
+    payload += timestamp.length() ? "\"" + timestamp + "\"" : "null";
+    payload += ",\"timestamp_ms\":" + String(millis()) + ",";
     payload += "\"measurement_mode\":\"simulated\",\"metrics\":{";
     payload += "\"voltage\":{\"value\":" + String(voltage, 2) + ",\"unit\":\"V\",\"status\":\"normal\"},";
     payload += "\"current\":{\"value\":" + String(current, 3) + ",\"unit\":\"A\",\"status\":\"normal\"},";
@@ -314,6 +455,16 @@ void publishEnergyTelemetry() {
     payload += "\"load_status\":{\"value\":\"" + String(getLoadStatusCode(loadStatus)) + "\",\"unit\":\"state\",\"status\":\"normal\"}";
     payload += "}}";
     Serial.println(payload);
+
+    if (mqttClient.connected()) {
+        if (mqttClient.publish(TELEMETRY_TOPIC, payload.c_str())) {
+            Serial.println("Energy telemetry published to MQTT.");
+        } else {
+            Serial.println("Energy telemetry MQTT publish failed.");
+        }
+    } else {
+        Serial.println("MQTT is disconnected. Energy telemetry was not sent.");
+    }
 }
 
 // ============================================================
@@ -355,6 +506,19 @@ void setup() {
 
     initializeHardware();
 
+    connectWiFi();
+    syncTime();
+
+    // Prototype setting: certificate validation is disabled.
+    // Replace with the broker CA certificate for production deployments.
+    secureClient.setInsecure();
+    mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+    mqttClient.setKeepAlive(30);
+    mqttClient.setSocketTimeout(5);
+    mqttClient.setBufferSize(1024);
+
+    connectMQTT();
+
     lastReadingTime = millis();
     lastBlinkTime = millis();
 
@@ -370,6 +534,8 @@ void setup() {
 // ============================================================
 
 void loop() {
+
+    maintainMQTTConnection();
 
     unsigned long currentTime = millis();
 
@@ -395,4 +561,10 @@ void loop() {
 
     // Called continuously so red LED blinks smoothly.
     updateLEDs(millis());
+
+    if (mqttClient.connected() &&
+        currentTime - lastStatusPublish >= STATUS_INTERVAL) {
+        lastStatusPublish = currentTime;
+        publishDeviceStatus();
+    }
 }
