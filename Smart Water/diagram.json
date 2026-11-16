@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "author": "CHRIST Smart Campus",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": -9.6, "left": -43.16, "attrs": {} },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "ultrasonic",
+      "top": -140,
+      "left": 270,
+      "attrs": { "distance": "100" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "flowBtn",
+      "top": 80,
+      "left": 300,
+      "attrs": { "color": "blue", "label": "Flow Pulse" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "leakBtn",
+      "top": 179,
+      "left": 297.6,
+      "attrs": { "color": "red", "label": "Leak" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "pumpLed",
+      "top": -180,
+      "left": 490,
+      "attrs": { "color": "blue", "label": "Pump" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "pumpRes",
+      "top": -180,
+      "left": 570,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "greenLed",
+      "top": -70,
+      "left": 490,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "greenRes",
+      "top": -70,
+      "left": 570,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "yellowLed",
+      "top": 20,
+      "left": 490,
+      "attrs": { "color": "yellow" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "yellowRes",
+      "top": 20,
+      "left": 570,
+      "attrs": { "value": "220" }
+    },
+    { "type": "wokwi-led", "id": "redLed", "top": 110, "left": 490, "attrs": { "color": "red" } },
+    {
+      "type": "wokwi-resistor",
+      "id": "redRes",
+      "top": 110,
+      "left": 570,
+      "attrs": { "value": "220" }
+    }
+  ],
+  "connections": [
+    [ "esp:5V", "ultrasonic:VCC", "red", [] ],
+    [ "esp:GND.1", "ultrasonic:GND", "black", [] ],
+    [ "esp:5", "ultrasonic:TRIG", "green", [] ],
+    [ "esp:18", "ultrasonic:ECHO", "blue", [] ],
+    [ "esp:32", "flowBtn:1.l", "blue", [] ],
+    [ "flowBtn:2.l", "esp:GND.1", "black", [] ],
+    [ "esp:33", "leakBtn:1.l", "red", [] ],
+    [ "leakBtn:2.l", "esp:GND.1", "black", [] ],
+    [ "esp:19", "pumpLed:A", "blue", [] ],
+    [ "pumpLed:C", "pumpRes:1", "blue", [] ],
+    [ "pumpRes:2", "esp:GND.1", "black", [] ],
+    [ "esp:25", "greenLed:A", "green", [] ],
+    [ "greenLed:C", "greenRes:1", "green", [] ],
+    [ "greenRes:2", "esp:GND.1", "black", [] ],
+    [ "esp:26", "yellowLed:A", "yellow", [] ],
+    [ "yellowLed:C", "yellowRes:1", "yellow", [] ],
+    [ "yellowRes:2", "esp:GND.1", "black", [] ],
+    [ "esp:27", "redLed:A", "red", [] ],
+    [ "redLed:C", "redRes:1", "red", [] ],
+    [ "redRes:2", "esp:GND.1", "black", [] ]
+  ],
+  "dependencies": {}
+}

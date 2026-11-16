@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "author": "Smart Classroom Energy Management System",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 120, "left": 250, "attrs": {} },
+    {
+      "type": "wokwi-photoresistor-sensor",
+      "id": "ldr1",
+      "top": 22.4,
+      "left": -104.8,
+      "attrs": {}
+    },
+    { "type": "wokwi-pir-motion-sensor", "id": "pir1", "top": 196, "left": -93.78, "attrs": {} },
+    { "type": "wokwi-dht22", "id": "dht1", "top": 400, "left": -80, "attrs": {} },
+    {
+      "type": "wokwi-led",
+      "id": "lightLed",
+      "top": 25.2,
+      "left": 541.4,
+      "attrs": { "color": "yellow" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "lightRes",
+      "top": 148.8,
+      "left": 536.05,
+      "rotate": 270,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "fanServo",
+      "top": 324.4,
+      "left": 566.4,
+      "attrs": { "horn": "double", "hornColor": "purple" }
+    },
+    { "type": "wokwi-hc-sr04", "id": "doorUltrasonic", "top": 470, "left": 540, "attrs": {} },
+    {
+      "type": "wokwi-servo",
+      "id": "doorServo",
+      "top": 610,
+      "left": 570,
+      "attrs": { "horn": "single", "hornColor": "red" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "ldr1:VCC", "esp:3V3", "red", [ "h153.6", "v110.4" ] ],
+    [ "ldr1:GND", "esp:GND.1", "black", [ "h124.8", "v225.2" ] ],
+    [ "ldr1:AO", "esp:34", "green", [ "h144", "v119.3" ] ],
+    [ "pir1:VCC", "esp:3V3", "red", [ "v48", "h230.4", "v-187.2" ] ],
+    [ "pir1:GND", "esp:GND.1", "black", [ "v28.8", "h292.75" ] ],
+    [ "pir1:OUT", "esp:27", "green", [ "v19.2", "h278.26", "v-62.4" ] ],
+    [ "dht1:VCC", "esp:3V3", "red", [ "v32.3", "h285.8", "v-398.4" ] ],
+    [ "dht1:GND", "esp:GND.1", "black", [ "v22.7", "h180.2", "v-264" ] ],
+    [ "dht1:SDA", "esp:15", "green", [ "v41.9", "h420.3", "v-264" ] ],
+    [ "esp:25", "lightRes:1", "green", [] ],
+    [ "lightRes:2", "lightLed:A", "green", [] ],
+    [ "fanServo:PWM", "esp:26", "orange", [ "h-355.2", "v-187" ] ],
+    [ "fanServo:V+", "esp:VIN", "red", [] ],
+    [ "fanServo:GND", "esp:GND.1", "black", [] ],
+    [ "esp:GND.2", "lightLed:C", "black", [ "v-4.8", "h186.84", "v-48" ] ],
+    [ "doorUltrasonic:VCC", "esp:VIN", "red", [] ],
+    [ "doorUltrasonic:GND", "esp:GND.1", "black", [ "v49.9", "h-401.3", "v-340.8" ] ],
+    [ "doorUltrasonic:TRIG", "esp:5", "green", [ "v11.5", "h-270.54" ] ],
+    [ "doorUltrasonic:ECHO", "esp:18", "blue", [ "v30.7", "h-295.3", "v-369.6" ] ],
+    [ "doorServo:PWM", "esp:14", "orange", [ "h-368.4", "v-424.6" ] ],
+    [ "doorServo:V+", "esp:VIN", "red", [] ],
+    [ "doorServo:GND", "esp:GND.1", "black", [ "h-301.2", "v-386.4" ] ]
+  ],
+  "dependencies": {}
+}

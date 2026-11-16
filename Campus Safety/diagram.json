@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "author": "CHRIST Smart Campus",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 19.2, "left": 398.44, "attrs": {} },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht",
+      "top": -130,
+      "left": 270,
+      "attrs": { "temperature": "25", "humidity": "50" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "emergencyBtn",
+      "top": 50,
+      "left": 290,
+      "attrs": { "color": "red", "label": "Emergency" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "resetBtn",
+      "top": 150,
+      "left": 290,
+      "attrs": { "color": "green", "label": "Reset" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "greenLed",
+      "top": -100,
+      "left": 520,
+      "attrs": { "color": "green", "label": "Normal" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "greenRes",
+      "top": -100,
+      "left": 600,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "yellowLed",
+      "top": 0,
+      "left": 520,
+      "attrs": { "color": "yellow", "label": "Warning" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "yellowRes",
+      "top": 0,
+      "left": 600,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "redLed",
+      "top": 100,
+      "left": 520,
+      "attrs": { "color": "red", "label": "Emergency" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "redRes",
+      "top": 100,
+      "left": 600,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "buzzer",
+      "top": 210,
+      "left": 520,
+      "attrs": { "volume": "0.1" }
+    }
+  ],
+  "connections": [
+    [ "esp:3V3", "dht:VCC", "red", [] ],
+    [ "esp:GND.1", "dht:GND", "black", [] ],
+    [ "esp:15", "dht:SDA", "green", [] ],
+    [ "esp:32", "emergencyBtn:1.l", "red", [] ],
+    [ "emergencyBtn:2.l", "esp:GND.1", "black", [] ],
+    [ "esp:33", "resetBtn:1.l", "green", [] ],
+    [ "resetBtn:2.l", "esp:GND.1", "black", [ "v67.6", "h-117.2", "v-115.2", "h230.25" ] ],
+    [ "esp:25", "greenLed:A", "green", [] ],
+    [ "greenLed:C", "greenRes:1", "green", [] ],
+    [ "greenRes:2", "esp:GND.1", "black", [ "h-457.2", "v267.15" ] ],
+    [ "esp:26", "yellowLed:A", "yellow", [] ],
+    [ "yellowLed:C", "yellowRes:1", "yellow", [] ],
+    [ "yellowRes:2", "esp:GND.1", "black", [] ],
+    [ "esp:27", "redLed:A", "red", [] ],
+    [ "redLed:C", "redRes:1", "red", [] ],
+    [ "redRes:2", "esp:GND.1", "black", [] ],
+    [ "esp:19", "buzzer:1", "purple", [] ],
+    [ "buzzer:2", "esp:GND.1", "black", [ "h-326.6", "v-121.2" ] ]
+  ],
+  "dependencies": {}
+}

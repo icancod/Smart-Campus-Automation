@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "author": "CHRIST Smart Campus",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": -28.8, "left": 4.84, "attrs": {} },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "ultrasonic",
+      "top": -150,
+      "left": 280,
+      "attrs": { "distance": "2" }
+    },
+    { "type": "wokwi-hx711", "id": "scale", "top": 127.4, "left": 281, "attrs": {} },
+    {
+      "type": "wokwi-led",
+      "id": "greenLed",
+      "top": -100,
+      "left": 530,
+      "attrs": { "color": "green", "label": "Normal" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "greenRes",
+      "top": -100,
+      "left": 610,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "yellowLed",
+      "top": 0,
+      "left": 530,
+      "attrs": { "color": "yellow", "label": "Nearly Full" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "yellowRes",
+      "top": 0,
+      "left": 610,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "redLed",
+      "top": 100,
+      "left": 530,
+      "attrs": { "color": "red", "label": "Full" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "redRes",
+      "top": 100,
+      "left": 610,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "buzzer",
+      "top": 232.8,
+      "left": 529.8,
+      "attrs": { "volume": "0.1" }
+    }
+  ],
+  "connections": [
+    [ "esp:5V", "ultrasonic:VCC", "red", [] ],
+    [ "esp:GND.1", "ultrasonic:GND", "black", [] ],
+    [ "esp:5", "ultrasonic:TRIG", "green", [] ],
+    [ "esp:18", "ultrasonic:ECHO", "blue", [] ],
+    [ "esp:3V3", "scale:VCC", "red", [] ],
+    [ "esp:GND.1", "scale:GND", "black", [] ],
+    [ "esp:16", "scale:DT", "green", [] ],
+    [ "esp:17", "scale:SCK", "blue", [] ],
+    [ "esp:25", "greenLed:A", "green", [] ],
+    [ "greenLed:C", "greenRes:1", "green", [] ],
+    [ "greenRes:2", "esp:GND.1", "black", [] ],
+    [ "esp:26", "yellowLed:A", "yellow", [] ],
+    [ "yellowLed:C", "yellowRes:1", "yellow", [] ],
+    [ "yellowRes:2", "esp:GND.1", "black", [] ],
+    [ "esp:27", "redLed:A", "red", [] ],
+    [ "redLed:C", "redRes:1", "red", [] ],
+    [ "redRes:2", "esp:GND.1", "black", [] ],
+    [ "esp:19", "buzzer:1", "purple", [] ],
+    [ "buzzer:2", "esp:GND.1", "black", [] ]
+  ],
+  "dependencies": {}
+}

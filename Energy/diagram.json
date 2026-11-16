@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "author": "CHRIST Smart Campus",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "pot1",
+      "top": -97.3,
+      "left": -230.6,
+      "attrs": { "value": "0" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "greenLed",
+      "top": -150,
+      "left": 450,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "yellowLed",
+      "top": -70,
+      "left": 450,
+      "attrs": { "color": "yellow" }
+    },
+    { "type": "wokwi-led", "id": "redLed", "top": 10, "left": 450, "attrs": { "color": "red" } },
+    {
+      "type": "wokwi-resistor",
+      "id": "rg",
+      "top": -150,
+      "left": 540,
+      "attrs": { "value": "220" }
+    },
+    { "type": "wokwi-resistor", "id": "ry", "top": -70, "left": 540, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "rr", "top": 10, "left": 540, "attrs": { "value": "220" } }
+  ],
+  "connections": [
+    [ "esp:3V3", "pot1:VCC", "red", [] ],
+    [ "esp:GND.1", "pot1:GND", "black", [] ],
+    [ "esp:34", "pot1:SIG", "green", [] ],
+    [ "esp:25", "greenLed:A", "green", [] ],
+    [ "greenLed:C", "rg:1", "green", [] ],
+    [ "rg:2", "esp:GND.1", "black", [] ],
+    [ "esp:26", "yellowLed:A", "yellow", [] ],
+    [ "yellowLed:C", "ry:1", "yellow", [] ],
+    [ "ry:2", "esp:GND.1", "black", [] ],
+    [ "esp:27", "redLed:A", "red", [] ],
+    [ "redLed:C", "rr:1", "red", [] ],
+    [ "rr:2", "esp:GND.1", "black", [] ]
+  ],
+  "dependencies": {}
+}
